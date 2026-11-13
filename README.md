@@ -14,6 +14,9 @@ pip install -e . --no-deps      # inside an environment that already has torch a
 the dependencies listed in `pyproject.toml`. A GPU is used when available; the first run
 downloads the pretrained LoFTR "outdoor" weights (44 MB).
 
+LoFTR runs in fp16 and its calls are split to fit the free GPU memory (the cost of one
+photo/slice pair is measured on the first call), so an 8-12 GB card handles a 0.37 mm T1.
+
 ## Use
 
 ```

@@ -30,7 +30,10 @@ from scipy.spatial.transform import Rotation
 
 HR = 3          # LoFTR photo resolution relative to the classical-stage photo
 RES = 2         # LoFTR images are sampled at 1/RES native voxel
+AMP = True      # run LoFTR in fp16 autocast on CUDA: ~30 % less memory, 2-3x faster, same matches
+MEM_FRAC = 0.7  # share of the free GPU memory one LoFTR call may use
 _LOFTR = None
+_PAIR_BYTES = {}   # (H, W, photo features cached) -> measured peak GPU bytes of one photo/slice pair
 
 
 def get_loftr(dev):
@@ -39,6 +42,55 @@ def get_loftr(dev):
         import kornia.feature as KF
         _LOFTR = KF.LoFTR(pretrained="outdoor").to(dev).eval()
     return _LOFTR
+
+
+def pairs_per_call(dev, key):
+    """How many photo/slice pairs one LoFTR call may hold. LoFTR's coarse matching keeps several
+    (tokens x tokens) matrices per pair, ~1 GB per pair for a 0.37 mm MRI, so the fan of slices
+    must be split to what the GPU has left. The cost of one pair is measured on the first call."""
+    if not str(dev).startswith("cuda"):
+        return 4
+    free, total = torch.cuda.mem_get_info(dev)
+    alloc = torch.cuda.memory_allocated(dev)
+    # the allocator's unused cache is ours too, but never count more than the card holds:
+    # on WSL the cache can grow past the physical memory (it spills into system RAM)
+    free = min(free + torch.cuda.memory_reserved(dev) - alloc, total - alloc)
+    return max(1, int(MEM_FRAC * free / _PAIR_BYTES[key]))
+
+
+def run_loftr(dev, ph, sl):
+    """LoFTR of photo(s) `ph` (1 or B,1,H,W) against slices `sl` (B,1,H,W), split into calls that
+    fit in GPU memory. With a single photo its backbone features are computed once and reused.
+    Returns keypoints0, keypoints1, confidence, batch_indexes (index into `sl`)."""
+    loftr = get_loftr(dev)
+    cuda = str(dev).startswith("cuda")
+    B = sl.shape[0]
+    cache_photo = ph.shape[0] == 1 and hasattr(loftr, "extract_features")   # kornia >= 0.9
+    key = tuple(sl.shape[-2:]) + (cache_photo,)
+    outs, k = [], 0
+    with torch.autocast("cuda", dtype=torch.float16, enabled=cuda and AMP):
+        feats = loftr.extract_features(ph) if cache_photo else None
+        while k < B:
+            measure = cuda and key not in _PAIR_BYTES
+            n = 1 if measure else min(B - k, pairs_per_call(dev, key))
+            if measure:
+                torch.cuda.synchronize(dev)
+                torch.cuda.reset_peak_memory_stats(dev)
+                base = torch.cuda.memory_allocated(dev)
+            inp = {"image1": sl[k:k + n]}
+            if feats is not None:
+                inp["features0"] = {name: v.expand(n, -1, -1, -1) for name, v in feats.items()}
+            else:
+                inp["image0"] = ph[k:k + n] if ph.shape[0] > 1 else ph.expand(n, -1, -1, -1)
+            o = loftr(inp)
+            if measure:
+                torch.cuda.synchronize(dev)
+                _PAIR_BYTES[key] = max(torch.cuda.max_memory_allocated(dev) - base, 1)
+            o["batch_indexes"] = o["batch_indexes"] + k
+            outs.append(o)
+            k += n
+    out = {name: torch.cat([o[name] for o in outs]) for name in outs[0]}
+    return {name: v if name == "batch_indexes" else v.float() for name, v in out.items()}
 
 
 # ----------------------------------------------------------------------------- state
@@ -127,11 +179,10 @@ class Renderer:
 
 def match_fan(R, st, i, dys, conf_thr=0.3, max_disp=40.0):
     """LoFTR photo i against slices at Y[i]+dys. Returns photo XZ, MRI XZ, Y, conf (tensors)."""
-    loftr = get_loftr(R.dev)
     ph = R.photo(i, st["P"][i])
     Ys = st["Y"][i] + np.asarray(dys, dtype=np.float64)
     sl = R.slices(st["Rg"], Ys)
-    out = loftr({"image0": ph[None].expand(len(Ys), -1, -1, -1), "image1": sl})
+    out = run_loftr(R.dev, ph[None], sl)
     cf = out["confidence"]
     a, b = R.px_to_o(out["keypoints0"]), R.px_to_o(out["keypoints1"])
     yy = torch.as_tensor(Ys, dtype=torch.float32, device=R.dev)[out["batch_indexes"]]
@@ -246,7 +297,6 @@ def rescue(R, st, i, cen, log, scales=(0.6, 0.7, 0.82, 1.0, 1.2, 1.4, 1.65), rot
     """Photo i has almost no matches: its zoom or rotation differs from the other photos.
     Try a grid of in-plane scales / rotations (about the slab centre) and nearby depths and
     keep the combination LoFTR agrees with most."""
-    loftr = get_loftr(R.dev)
     p0 = np.linalg.inv(st["P"][i]) @ np.array([cen[0], cen[1], 1.0])           # slab centre in o coords
     cands = []
     for sc in scales:
@@ -260,7 +310,7 @@ def rescue(R, st, i, cen, log, scales=(0.6, 0.7, 0.82, 1.0, 1.2, 1.4, 1.65), rot
         cc = cands[k:k + chunk]
         ph = torch.stack([R.photo(i, st["P"][i] @ np.linalg.inv(S)) for S, _ in cc])
         sl = R.slices(st["Rg"], [st["Y"][i] + dy for _, dy in cc])
-        out = loftr({"image0": ph, "image1": sl})
+        out = run_loftr(R.dev, ph, sl)
         a, b = R.px_to_o(out["keypoints0"]).cpu().numpy(), R.px_to_o(out["keypoints1"]).cpu().numpy()
         bi, ok = out["batch_indexes"].cpu().numpy(), (out["confidence"] > 0.3).cpu().numpy()
         for j, (S, dy) in enumerate(cc):
