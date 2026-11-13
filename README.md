@@ -7,7 +7,7 @@ and warps every photo onto its slice.
 ## Install
 
 ```
-pip install -e . --no-deps      # inside an environment that already has torch and kornia
+pip install -e . 
 ```
 
 `--no-deps` keeps pip from touching an existing PyTorch/CUDA install. Without it, pip installs
@@ -69,9 +69,3 @@ A photo with fewer than 60 LoFTR matches is flagged in the printed table; check 
 5. LoFTR (pretrained, not retrained) matches each photo against a fan of parallel MRI slices;
    the matches of all photos fix the shared cutting angle and each photo's slice, with
    consecutive slabs kept about one slab thickness apart.
-
-## Limits
-
-- One slab per photo. Blue or black photo background.
-- Photos taken at very different zooms or rotations within one brain can fail; these show up as
-  very low LoFTR match counts.
