@@ -19,7 +19,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-wmh = ["wmh_seg"]
+wmh = ["wmh_seg>=1.6"]
 ppt = ["python-pptx"]
 
 [project.scripts]

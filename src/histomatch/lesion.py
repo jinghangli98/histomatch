@@ -36,7 +36,8 @@ def segment_wmh(t1_path, out_path, model="exvivo", log=print):
     try:
         from wmh_seg import nnunet_segment
     except ImportError as e:
-        raise ValueError(f"--wmh needs the wmh_seg package (pip install wmh_seg): {e}")
+        raise ValueError("--wmh needs wmh_seg 1.6 or newer (pip install -U wmh_seg); "
+                         f"an older version has no `nnunet_segment` with model selection: {e}")
     PG.start(1, f"Lesion segmentation ({model})")
     with torch.enable_grad():                      # leave wmh_seg's own grad handling untouched
         nnunet_segment(t1_path, out_path, model=model)

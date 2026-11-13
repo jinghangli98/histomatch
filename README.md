@@ -48,7 +48,7 @@ histomatch "path/to/photos" path/to/T1.nii.gz -o results/CW23-36 --wmh
 ```
 
 `--wmh` segments lesions on the T1 with [wmh_seg](https://github.com/jinghangli98/wmh_seg)
-(`pip install wmh_seg`; ex-vivo model by default, `--wmh-model` to change) and transfers them onto
+(`pip install -U wmh_seg`, version 1.6 or newer; ex-vivo model by default, `--wmh-model` to change) and transfers them onto
 every photo. `--lesion-mask mask.nii.gz` uses an existing mask on the T1 grid instead.
 
 | File | Content |
