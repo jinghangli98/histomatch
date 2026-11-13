@@ -7,7 +7,7 @@ and warps every photo onto its slice.
 ## Install
 
 ```
-pip install -e . --no-deps      # inside an environment that already has torch and kornia
+pip install -e . 
 ```
 
 `--no-deps` keeps pip from touching an existing PyTorch/CUDA install. Without it, pip installs
