@@ -66,6 +66,6 @@ A photo with fewer than 60 LoFTR matches is flagged in the printed table; check 
 2. The MRI is converted to local contrast, so no brain mask is needed.
 3. Coarse search of the photo stack against the MRI over tilt, in-plane rotation, mirror and scale.
 4. Gradient refinement of the global pose plus small per-photo adjustments.
-5. LoFTR (pretrained, not retrained) matches each photo against a fan of parallel MRI slices;
+5. LoFTR matches each photo against a fan of parallel MRI slices;
    the matches of all photos fix the shared cutting angle and each photo's slice, with
    consecutive slabs kept about one slab thickness apart.
