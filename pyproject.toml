@@ -16,11 +16,9 @@ dependencies = [
     "scikit-image",
     "torch",
     "kornia",
+    "wmh_seg",
+    "python-pptx"
 ]
-
-[project.optional-dependencies]
-wmh = ["wmh_seg>=1.6"]
-ppt = ["python-pptx"]
 
 [project.scripts]
 histomatch = "histomatch.cli:main"
