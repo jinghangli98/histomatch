@@ -27,7 +27,8 @@ Photos: one slab per photo, image files directly in the folder (sub-folders are 
 sorted by the last number in the file name and taken as anterior to posterior.
 
 Options: `--spacing` expected slab thickness in MRI voxels (default 24.5), `--no-loftr`
-classical stage only. `histomatch -h` lists the outputs and the rotation convention.
+classical stage only, `--fast` follow up only 4 of the 8 starting orientations (about a minute
+quicker, can miss the right orientation). `histomatch -h` lists the outputs and the rotation convention.
 
 ## Outputs
 

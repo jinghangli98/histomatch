@@ -51,6 +51,9 @@ def main(argv=None):
     ap.add_argument("--ppt", action="store_true",
                     help="also write a PowerPoint report (<output folder name>.pptx) into the output folder")
     ap.add_argument("--no-loftr", action="store_true", help="classical stage only (faster, less accurate)")
+    ap.add_argument("--fast", action="store_true",
+                    help="follow up only 4 of the 8 starting orientations (about a minute quicker, "
+                         "but can miss the right orientation)")
     ap.add_argument("--no-progress", action="store_true", help="do not draw progress bars")
     ap.add_argument("-v", "--verbose", action="store_true", help="print the progress of every search step")
     ap.add_argument("--version", action="version", version=f"histomatch {__version__}")
@@ -63,7 +66,7 @@ def main(argv=None):
             PG.ENABLED = False
         log = PG.write if a.verbose else (lambda m="": None if m.startswith("  ") else PG.write(m))
         run(a.photos, a.t1, a.out, use_loftr=not a.no_loftr, spacing=a.spacing, wmh=a.wmh,
-            lesion_mask=a.lesion_mask, wmh_model=a.wmh_model, ppt=a.ppt, log=log)
+            lesion_mask=a.lesion_mask, wmh_model=a.wmh_model, ppt=a.ppt, fast=a.fast, log=log)
     except (ValueError, IOError) as e:
         print(f"histomatch: error: {e}", file=sys.stderr)
         return 1

@@ -6,7 +6,7 @@ import numpy as np
 
 
 def run(photo_dir, t1_path, out_dir, use_loftr=True, spacing=24.5, wmh=False, lesion_mask=None,
-        wmh_model="exvivo", ppt=False, log=print):
+        wmh_model="exvivo", ppt=False, fast=False, log=print):
     """Match every photo in `photo_dir` (sorted numerically, anterior -> posterior) to `t1_path`.
 
     Writes angle_pos, match.json, resizedCam/, mri_slices/, qc/ and png.nii.gz to `out_dir`
@@ -14,6 +14,10 @@ def run(photo_dir, t1_path, out_dir, use_loftr=True, spacing=24.5, wmh=False, le
 
     With `wmh=True` the T1 is segmented with wmh_seg (or pass an existing mask on the T1 grid
     as `lesion_mask`) and the lesions are transferred onto every photo.
+
+    `fast=True` takes only the better of the two coarse candidates of each direction/mirror
+    class through the full fit and LoFTR (4 instead of 8): quicker, but it can miss the right
+    orientation.
     """
     from . import classical as C
     from . import loftr_stage as LS
@@ -33,7 +37,7 @@ def run(photo_dir, t1_path, out_dir, use_loftr=True, spacing=24.5, wmh=False, le
     photos, scale_f = C.load_photos(paths)
     mri = C.MRI(t1_path)
     log(f"MRI {mri.vol.shape} @ {mri.vox:.3f} mm, running on {C.DEV}  ({time.time() - t0:.0f}s)")
-    fits = C.refine(mri, photos, C.coarse_search(mri, photos, log), log)
+    fits = C.refine(mri, photos, C.coarse_search(mri, photos, log), log, fast=fast)
     os.makedirs(out_dir, exist_ok=True)
     st = LS.state_from_model(fits[0][1], mri)
     N, per = len(photos), (len(LS.SCHED) + 1) * len(photos)

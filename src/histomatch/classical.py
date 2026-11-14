@@ -307,27 +307,38 @@ class Model:
         return float(self.score(f).mean())
 
 
-def refine(mri, photos, cands, log):
+def refine(mri, photos, cands, log, fast=False):
+    """Fit every coarse candidate and return (score, model) pairs, best first.
+
+    All candidates (two per direction/mirror class) get the full fit. The short global fit is
+    not a reliable way to choose between the two of a class: the right one can score slightly
+    lower there and still be the only one that matches. With `fast=True` only the better one of
+    each class goes on, which halves the work of this step and of the LoFTR stage.
+    """
     G = ["w", "T", "logk", "logt"]
     models = []
-    PG.start(len(cands) * 120 + len({c["cls"] for c in cands}) * 400, "Refining the fit")
+    n_full = len({c["cls"] for c in cands}) if fast else len(cands)
+    PG.start(len(cands) * 120 + n_full * 400, "Refining the fit")
     for c in cands:
         m = Model(mri, photos, c)
         s = m.fit(4, 120, G)
         log(f"  global fit {s:.3f}  ({c['desc']})")
-        models.append((s, m))
+        models.append((s, m, c["desc"]))
     models.sort(key=lambda x: -x[0])
-    pick, seen = [], set()                              # the best candidate of every class goes on
-    for x in models:
-        if x[1].cls not in seen:
-            seen.add(x[1].cls)
-            pick.append(x)
+    if fast:                                            # only the best candidate of every class goes on
+        pick, seen = [], set()
+        for x in models:
+            if x[1].cls not in seen:
+                seen.add(x[1].cls)
+                pick.append(x)
+    else:
+        pick = models
     out = []
-    for s, m in pick:
+    for s, m, desc in pick:
         m.fit(4, 150, G + ["th", "sh"])
         m.fit(4, 100, G + ["th", "sh", "dy", "ls"])
         s2 = m.fit(2, 150, G + ["th", "sh", "dy", "ls"])
-        log(f"  full fit   {s2:.3f}")
+        log(f"  full fit   {s2:.3f}  ({desc})")
         out.append((s2, m))
     out.sort(key=lambda x: -x[0])
     return out
