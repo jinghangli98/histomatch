@@ -50,14 +50,26 @@ def main(argv=None):
                     help="use this existing lesion mask (on the T1 grid) instead of running wmh_seg")
     ap.add_argument("--ppt", action="store_true",
                     help="also write a PowerPoint report (<output folder name>.pptx) into the output folder")
-    ap.add_argument("--no-loftr", action="store_true", help="classical stage only (faster, less accurate)")
+    ap.add_argument("--method", default="search", choices=["search", "learned"],
+                    help="how the photos are placed. search (default): cutting-angle search, then LoFTR "
+                         "refinement. learned: the trained slice2vol model places every photo on its own, "
+                         "with no assumption about how the brain sat in the cutting guide (needs the "
+                         "slice2vol package and its weights)")
+    ap.add_argument("--weights", metavar="PATH",
+                    help="slice2vol checkpoint for --method learned (default: $HISTOMATCH_WEIGHTS, "
+                         "else ~/.cache/histomatch/slice2vol_v1/best.pt)")
+    ap.add_argument("--no-loftr", action="store_true",
+                    help="search: classical stage only (faster, less accurate). learned: skip the LoFTR "
+                         "match counts")
     ap.add_argument("--fast", action="store_true",
                     help="follow up only 4 of the 8 starting orientations (about a minute quicker, "
-                         "but can miss the right orientation)")
+                         "but can miss the right orientation); ignored by --method learned")
     ap.add_argument("--no-progress", action="store_true", help="do not draw progress bars")
     ap.add_argument("-v", "--verbose", action="store_true", help="print the progress of every search step")
     ap.add_argument("--version", action="version", version=f"histomatch {__version__}")
     a = ap.parse_args(argv)
+    if a.weights and a.method != "learned":
+        ap.error("--weights is only used with --method learned")
 
     from .pipeline import run
     try:
@@ -66,7 +78,8 @@ def main(argv=None):
             PG.ENABLED = False
         log = PG.write if a.verbose else (lambda m="": None if m.startswith("  ") else PG.write(m))
         run(a.photos, a.t1, a.out, use_loftr=not a.no_loftr, spacing=a.spacing, wmh=a.wmh,
-            lesion_mask=a.lesion_mask, wmh_model=a.wmh_model, ppt=a.ppt, fast=a.fast, log=log)
+            lesion_mask=a.lesion_mask, wmh_model=a.wmh_model, ppt=a.ppt, fast=a.fast, method=a.method,
+            weights=a.weights, log=log)
     except (ValueError, IOError) as e:
         print(f"histomatch: error: {e}", file=sys.stderr)
         return 1

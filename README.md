@@ -30,6 +30,24 @@ Options: `--spacing` expected slab thickness in MRI voxels (default 24.5), `--no
 classical stage only, `--fast` follow up only 4 of the 8 starting orientations (about a minute
 quicker, can miss the right orientation). `histomatch -h` lists the outputs and the rotation convention.
 
+### `--method learned`
+
+```
+histomatch "path/to/photos" path/to/T1.nii.gz -o results/case --method learned [--weights best.pt]
+```
+
+Places every photo with the trained [slice2vol](../slice2vol) model instead of the search: each photo is
+matched to the MRI on its own, with no assumption about how the brain sat in the cutting guide, so it
+also handles brains the search gets wrong (unusual placement). The independent placements are then
+expressed in the same form as the search's result (one cutting orientation, one slice and one in-plane
+transform per photo), so every output, `--wmh` and `--ppt` work unchanged; `match.json` gains
+`"method": "learned"` and a `placed` flag per photo. LoFTR is only used to count matches as a quality
+figure (`--no-loftr` skips that); `--fast` is ignored.
+
+Needs the `slice2vol` package (`pip install -e path/to/slice2vol`) and its checkpoint with the
+`config.yaml` beside it: `--weights PATH`, or `$HISTOMATCH_WEIGHTS`, or
+`~/.cache/histomatch/slice2vol_v1/best.pt`.
+
 ## Outputs
 
 | File | Content |

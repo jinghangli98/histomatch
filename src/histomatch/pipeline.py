@@ -1,4 +1,5 @@
 """End-to-end matching: classical initialisation, then LoFTR refinement, then export."""
+import json
 import os
 import time
 
@@ -6,7 +7,7 @@ import numpy as np
 
 
 def run(photo_dir, t1_path, out_dir, use_loftr=True, spacing=24.5, wmh=False, lesion_mask=None,
-        wmh_model="exvivo", ppt=False, fast=False, log=print):
+        wmh_model="exvivo", ppt=False, fast=False, method="search", weights=None, log=print):
     """Match every photo in `photo_dir` (sorted numerically, anterior -> posterior) to `t1_path`.
 
     Writes angle_pos, match.json, resizedCam/, mri_slices/, qc/ and png.nii.gz to `out_dir`
@@ -18,6 +19,10 @@ def run(photo_dir, t1_path, out_dir, use_loftr=True, spacing=24.5, wmh=False, le
     `fast=True` takes only the better of the two coarse candidates of each direction/mirror
     class through the full fit and LoFTR (4 instead of 8): quicker, but it can miss the right
     orientation.
+
+    `method="learned"` places every photo with the trained slice2vol model (`weights`: its checkpoint)
+    instead of the classical search and LoFTR refinement; see learned.py. `use_loftr` then only decides
+    whether LoFTR match counts are computed as a quality figure, and `fast` is ignored.
     """
     from . import classical as C
     from . import loftr_stage as LS
@@ -25,7 +30,10 @@ def run(photo_dir, t1_path, out_dir, use_loftr=True, spacing=24.5, wmh=False, le
 
     if log is print:
         log = PG.write
-    PG.plan(4 + (1 if use_loftr else 0) + (2 if wmh and not lesion_mask else 1 if lesion_mask else 0) + (1 if ppt else 0))
+    if method not in ("search", "learned"):
+        raise ValueError(f"unknown method {method!r} (want 'search' or 'learned')")
+    extra = (2 if wmh and not lesion_mask else 1 if lesion_mask else 0) + (1 if ppt else 0)
+    PG.plan((3 if method == "learned" else 4) + (1 if use_loftr else 0) + extra)
 
     C.SPACING_VOX = float(spacing)
     t0 = time.time()
@@ -37,14 +45,29 @@ def run(photo_dir, t1_path, out_dir, use_loftr=True, spacing=24.5, wmh=False, le
     photos, scale_f = C.load_photos(paths)
     mri = C.MRI(t1_path)
     log(f"MRI {mri.vol.shape} @ {mri.vox:.3f} mm, running on {C.DEV}  ({time.time() - t0:.0f}s)")
-    fits = C.refine(mri, photos, C.coarse_search(mri, photos, log), log, fast=fast)
     os.makedirs(out_dir, exist_ok=True)
-    st = LS.state_from_model(fits[0][1], mri)
     N, per = len(photos), (len(LS.SCHED) + 1) * len(photos)
-    if not use_loftr:
+    if method == "learned":
+        from . import learned as LN
+        PG.start(N, "Placing photos (learned)")
+        st = LN.learned_state(paths, photos, scale_f, mri, weights=weights, log=log, tick=PG.tick)
+        if use_loftr:
+            PG.start(N, "LoFTR check")
+            st["loftr_inliers"] = LN.count_inliers(st, mri, photos, scale_f, C.DEV, tick=PG.tick)
+        PG.start(N, "Writing outputs")
+        summary = LS.export_state(st, mri, photos, scale_f, out_dir, thickness=spacing)
+        summary["method"] = "learned"
+        summary["placed"] = st["placed"]
+        with open(os.path.join(out_dir, "match.json"), "w") as fh:
+            json.dump(summary, fh, indent=1)
+    elif not use_loftr:
+        fits = C.refine(mri, photos, C.coarse_search(mri, photos, log), log, fast=fast)
+        st = LS.state_from_model(fits[0][1], mri)
         PG.start(N, "Writing outputs")
         summary = LS.export_state(st, mri, photos, scale_f, out_dir, thickness=spacing)
     else:
+        fits = C.refine(mri, photos, C.coarse_search(mri, photos, log), log, fast=fast)
+        st = LS.state_from_model(fits[0][1], mri)
         PG.start(len(fits) * per, "LoFTR matching")
         classical_st = st
         # run LoFTR from every classical candidate and keep the one LoFTR agrees with most
