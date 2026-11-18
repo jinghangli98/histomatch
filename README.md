@@ -10,13 +10,6 @@ and warps every photo onto its slice.
 pip install -e . 
 ```
 
-`--no-deps` keeps pip from touching an existing PyTorch/CUDA install. Without it, pip installs
-the dependencies listed in `pyproject.toml`. A GPU is used when available; the first run
-downloads the pretrained LoFTR "outdoor" weights (44 MB).
-
-LoFTR runs in fp16 and its calls are split to fit the free GPU memory (the cost of one
-photo/slice pair is measured on the first call), so an 8-12 GB card handles a 0.37 mm T1.
-
 ## Use
 
 ```
@@ -26,27 +19,7 @@ histomatch "path/to/CW23-36 anterior slab surface" path/to/T1.nii.gz -o results/
 Photos: one slab per photo, image files directly in the folder (sub-folders are ignored),
 sorted by the last number in the file name and taken as anterior to posterior.
 
-Options: `--spacing` expected slab thickness in MRI voxels (default 24.5), `--no-loftr`
-classical stage only, `--fast` follow up only 4 of the 8 starting orientations (about a minute
-quicker, can miss the right orientation). `histomatch -h` lists the outputs and the rotation convention.
-
-### `--method learned`
-
-```
-histomatch "path/to/photos" path/to/T1.nii.gz -o results/case --method learned [--weights best.pt]
-```
-
-Places every photo with the trained [slice2vol](../slice2vol) model instead of the search: each photo is
-matched to the MRI on its own, with no assumption about how the brain sat in the cutting guide, so it
-also handles brains the search gets wrong (unusual placement). The independent placements are then
-expressed in the same form as the search's result (one cutting orientation, one slice and one in-plane
-transform per photo), so every output, `--wmh` and `--ppt` work unchanged; `match.json` gains
-`"method": "learned"` and a `placed` flag per photo. LoFTR is only used to count matches as a quality
-figure (`--no-loftr` skips that); `--fast` is ignored.
-
-Needs the `slice2vol` package (`pip install -e path/to/slice2vol`) and its checkpoint with the
-`config.yaml` beside it: `--weights PATH`, or `$HISTOMATCH_WEIGHTS`, or
-`~/.cache/histomatch/slice2vol_v1/best.pt`.
+Options: `--spacing` expected slab thickness in MRI voxels (default 24.5)
 
 ## Outputs
 
@@ -63,7 +36,7 @@ Needs the `slice2vol` package (`pip install -e path/to/slice2vol`) and its check
 ## White matter lesions on the photos
 
 ```
-histomatch "path/to/photos" path/to/T1.nii.gz -o results/CW23-36 --wmh
+histomatch "path/to/photos" path/to/T1.nii.gz -o results/CW23-36 --wmh --ppt
 ```
 
 `--wmh` segments lesions on the T1 with [wmh_seg](https://github.com/jinghangli98/wmh_seg)
@@ -79,12 +52,3 @@ every photo. `--lesion-mask mask.nii.gz` uses an existing mask on the T1 grid in
 
 A photo with fewer than 60 LoFTR matches is flagged in the printed table; check its `qc` image.
 
-## How it works
-
-1. Tissue masks from the photo background colour.
-2. The MRI is converted to local contrast, so no brain mask is needed.
-3. Coarse search of the photo stack against the MRI over tilt, in-plane rotation, mirror and scale.
-4. Gradient refinement of the global pose plus small per-photo adjustments.
-5. LoFTR matches each photo against a fan of parallel MRI slices;
-   the matches of all photos fix the shared cutting angle and each photo's slice, with
-   consecutive slabs kept about one slab thickness apart.
